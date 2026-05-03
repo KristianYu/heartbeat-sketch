@@ -13,7 +13,7 @@ async function startServer() {
     },
   });
 
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000", 10);
 
     // In-memory "Redis" simulation
   const pairs = new Map<string, string>(); // userId -> partnerId
