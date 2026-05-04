@@ -364,12 +364,22 @@ const getDefaultText = (type: EmotionType) => {
 // --- Main App ---
 
 export default function App() {
-  const [userId] = useState(() => 'user_' + Math.random().toString(36).substring(2, 9));
-  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [userId] = useState(() => {
+    const stored = localStorage.getItem('heartbeat_userId');
+    if (stored) return stored;
+    const newId = 'user_' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('heartbeat_userId', newId);
+    return newId;
+  });
+  const [partnerId, setPartnerId] = useState<string | null>(() => {
+    return localStorage.getItem('heartbeat_partnerId') || null;
+  });
   const [socket, setSocket] = useState<Socket | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [inputCode, setInputCode] = useState('');
-  const [view, setView] = useState<'home' | 'history' | 'profile' | 'pairing' | 'mailbox'>('pairing');
+  const [view, setView] = useState<'home' | 'history' | 'profile' | 'pairing' | 'mailbox'>(() => {
+    return localStorage.getItem('heartbeat_partnerId') ? 'home' : 'pairing';
+  });
   const [showContactModal, setShowContactModal] = useState(false);
   const [incomingMessage, setIncomingMessage] = useState<Message | null>(null);
   const [mailboxMessages, setMailboxMessages] = useState<Message[]>([]);
@@ -528,6 +538,7 @@ export default function App() {
     const data = await res.json();
     if (data.partnerId) {
       setPartnerId(data.partnerId);
+      localStorage.setItem('heartbeat_partnerId', data.partnerId);
       setView('home');
     } else {
       alert(data.error);
@@ -635,6 +646,7 @@ export default function App() {
             <button 
               onClick={() => {
                 setPartnerId('demo_partner');
+                localStorage.setItem('heartbeat_partnerId', 'demo_partner');
                 setView('home');
                 setIsPartnerOnline(true);
               }}
