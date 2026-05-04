@@ -22,7 +22,6 @@ async function startServer() {
   const userStatus = new Map<string, { online: boolean, lastSeen: number }>();
   const capsules = new Map<string, Map<string, string>>(); // userId -> Map<EmotionType, text>
   const profiles = new Map<string, { name: string; birthday: string }>(); // userId -> profile
-  const pendingDisconnectRequests = new Map<string, string>(); // requesterId -> targetId
 
   // Helper to get pair key
   const getPairKey = (id1: string, id2: string) => [id1, id2].sort().join(":");
@@ -189,36 +188,18 @@ async function startServer() {
         socket.emit("disconnect_error", { error: "No partner found" });
         return;
       }
-      pendingDisconnectRequests.set(userId, partnerId);
-      io.to(partnerId).emit("disconnect_requested", { fromUserId: userId });
-    });
 
-    socket.on("respond_disconnect", ({ accept }: { accept: boolean }) => {
-      // Find who requested disconnect with this user as target
-      let requesterId: string | null = null;
-      for (const [reqId, targetId] of pendingDisconnectRequests) {
-        if (targetId === userId) {
-          requesterId = reqId;
-          break;
-        }
-      }
-      if (!requesterId) return;
+      // Clear pairing for both users
+      const pairKey = getPairKey(userId, partnerId);
+      pairs.delete(userId);
+      pairs.delete(partnerId);
+      messages.delete(pairKey);
+      capsules.delete(userId);
+      capsules.delete(partnerId);
 
-      pendingDisconnectRequests.delete(requesterId);
-
-      if (accept) {
-        // Clear pairing for both
-        const partnerId = pairs.get(userId);
-        if (partnerId) {
-          pairs.delete(userId);
-          pairs.delete(partnerId);
-        }
-
-        io.to(userId).emit("disconnected");
-        io.to(requesterId).emit("disconnected");
-      } else {
-        io.to(requesterId).emit("disconnect_rejected");
-      }
+      // Notify both sides
+      io.to(partnerId).emit("disconnected");
+      socket.emit("disconnected");
     });
 
     socket.on("disconnect", () => {
@@ -226,14 +207,6 @@ async function startServer() {
       const partnerId = pairs.get(userId);
       if (partnerId) {
         io.to(partnerId).emit("partner_status", { online: false });
-      }
-      // Clean up any pending disconnect requests from or to this user
-      pendingDisconnectRequests.delete(userId);
-      for (const [reqId, targetId] of pendingDisconnectRequests) {
-        if (targetId === userId) {
-          pendingDisconnectRequests.delete(reqId);
-          break;
-        }
       }
     });
   });
