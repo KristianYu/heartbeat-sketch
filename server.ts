@@ -11,12 +11,15 @@ async function startServer() {
     cors: {
       origin: "*",
     },
+    pingTimeout: 5000,
+    pingInterval: 10000,
   });
 
   const PORT = parseInt(process.env.PORT || "3000", 10);
 
     // In-memory "Redis" simulation
   const pairs = new Map<string, string>(); // userId -> partnerId
+  const userSockets = new Map<string, Set<string>>(); // userId -> Set<socketId>
   const invitationCodes = new Map<string, string>(); // code -> creatorId
   const messages = new Map<string, any[]>(); // pairKey -> messages[]
   const userStatus = new Map<string, { online: boolean, lastSeen: number }>();
@@ -102,6 +105,9 @@ async function startServer() {
     if (!userId) return;
 
     userStatus.set(userId, { online: true, lastSeen: Date.now() });
+    // Track this socket so we only mark offline when ALL sockets disconnect
+    if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+    userSockets.get(userId)!.add(socket.id);
     socket.join(userId);
 
     const partnerId = pairs.get(userId);
@@ -203,10 +209,16 @@ async function startServer() {
     });
 
     socket.on("disconnect", () => {
-      userStatus.set(userId, { online: false, lastSeen: Date.now() });
-      const partnerId = pairs.get(userId);
-      if (partnerId) {
-        io.to(partnerId).emit("partner_status", { online: false });
+      // Remove this socket from the user's socket set
+      userSockets.get(userId)?.delete(socket.id);
+      // Only mark offline when ALL sockets for this user are gone
+      if (!userSockets.get(userId) || userSockets.get(userId)!.size === 0) {
+        userSockets.delete(userId);
+        userStatus.set(userId, { online: false, lastSeen: Date.now() });
+        const partnerId = pairs.get(userId);
+        if (partnerId) {
+          io.to(partnerId).emit("partner_status", { online: false });
+        }
       }
     });
   });

@@ -626,8 +626,15 @@ export default function App() {
     setSocket(newSocket);
     newSocket.emit('get_capsules');
     newSocket.emit('get_history');
-    return () => { newSocket.close(); };
-  }, [userId]);
+
+    // Cleanly disconnect socket on page hide (refresh / tab close)
+    const handlePageHide = () => newSocket.disconnect();
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      newSocket.close();
+    };  }, [userId]);
 
   const storeCapsule = (type: EmotionType, text: string) => {
     if (!socket) return;
