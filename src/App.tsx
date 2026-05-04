@@ -491,6 +491,8 @@ export default function App() {
   const [partnerBirthday, setPartnerBirthday] = useState('');
   const [interactionCount, setInteractionCount] = useState(0);
   const [showDisconnectAnim, setShowDisconnectAnim] = useState(false);
+  const deferredInstallPrompt = React.useRef<any>(null);
+  const [canInstall, setCanInstall] = useState(false);
 
   // Handle 5-minute auto-move to mailbox and 24-hour expiration
   useEffect(() => {
@@ -521,6 +523,26 @@ export default function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const handleInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      deferredInstallPrompt.current = e;
+      setCanInstall(true);
+    };
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferredInstallPrompt.current) return;
+    deferredInstallPrompt.current.prompt();
+    const result = await deferredInstallPrompt.current.userChoice;
+    if (result.outcome === 'accepted') {
+      setCanInstall(false);
+      deferredInstallPrompt.current = null;
+    }
+  };
 
   const fetchProfile = React.useCallback(async () => {
     if (!partnerId) return;
@@ -1159,6 +1181,15 @@ export default function App() {
 
               <div className="space-y-4">
                 <div className="text-xs font-bold italic opacity-40 px-2 uppercase tracking-widest">设置与支持</div>
+                {canInstall && (
+                  <button
+                    onClick={handleInstall}
+                    className="w-full p-4 hand-drawn-border bg-white text-left text-sm italic flex justify-between items-center"
+                  >
+                    安装到桌面
+                    <Heart size={16} />
+                  </button>
+                )}
                 <button
                   onClick={() => setShowContactModal(true)}
                   className="w-full p-4 hand-drawn-border bg-white text-left text-sm italic flex justify-between items-center"
