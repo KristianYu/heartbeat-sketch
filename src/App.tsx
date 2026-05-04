@@ -363,6 +363,95 @@ const getDefaultText = (type: EmotionType) => {
 
 // --- Main App ---
 
+const DisconnectAnimation = ({ onComplete }: { onComplete: () => void }) => {
+  const fireP = Array.from({ length: 24 }, (_, i) => i);
+  const ashP = Array.from({ length: 36 }, (_, i) => i);
+  const fireColors = ['#ff6b35', '#ff4500', '#ff8c00', '#ffd700'];
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-center justify-center overflow-hidden"
+    >
+      <div className="relative w-80 h-80 flex items-center justify-center">
+        {/* Envelope */}
+        <motion.div
+          initial={{ scale: 1, rotate: 0, opacity: 1 }}
+          animate={{
+            scale: [1, 1.05, 0.8, 0.4, 0],
+            rotate: [0, 2, -4, 10, 20],
+            opacity: [1, 1, 0.6, 0.2, 0],
+          }}
+          transition={{ duration: 4, times: [0, 0.15, 0.35, 0.6, 1], ease: 'easeInOut' }}
+          className="absolute w-52 h-40 bg-[#e8e4da] hand-drawn-border shadow-2xl flex items-center justify-center"
+        >
+          <motion.div
+            animate={{ scale: [1, 1.2, 0.8, 0] }}
+            transition={{ duration: 3, times: [0, 0.2, 0.5, 0.8] }}
+          >
+            <Heart size={36} className="text-red-300" />
+          </motion.div>
+          {/* Flame char overlay */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 0.6, 0.9, 0] }}
+            transition={{ duration: 3.5, times: [0, 0.2, 0.5, 0.9] }}
+            className="absolute inset-0 bg-gradient-to-t from-orange-500/60 via-red-500/40 to-transparent hand-drawn-border"
+          />
+        </motion.div>
+
+        {/* Fire particles */}
+        {fireP.map((i) => (
+          <motion.div
+            key={`f-${i}`}
+            initial={{ x: 0, y: 0, scale: 0, opacity: 0 }}
+            animate={{
+              x: (Math.random() - 0.5) * 140,
+              y: -Math.random() * 180 - 30,
+              scale: [0, 1.2, 0.6, 0],
+              opacity: [0, 0.9, 0.5, 0],
+            }}
+            transition={{ duration: 1.8 + Math.random() * 1.2, delay: 0.3 + Math.random() * 0.6, ease: 'easeOut' }}
+            className="absolute w-3 h-3 rounded-full"
+            style={{ backgroundColor: fireColors[i % 4] }}
+          />
+        ))}
+
+        {/* Ash particles */}
+        {ashP.map((i) => (
+          <motion.div
+            key={`a-${i}`}
+            initial={{ x: (Math.random() - 0.5) * 60, y: (Math.random() - 0.5) * 40, opacity: 0, scale: 0 }}
+            animate={{
+              x: (Math.random() - 0.5) * 280,
+              y: -Math.random() * 380 - 80,
+              opacity: [0, 0, 1, 0.8, 0],
+              scale: [0, 0, 1, 0.6, 0],
+              rotate: Math.random() * 720,
+            }}
+            transition={{ duration: 3 + Math.random() * 2, delay: 1.2 + Math.random() * 1.5, ease: 'easeIn' }}
+            className="absolute w-1.5 h-1.5 rounded-full"
+            style={{ backgroundColor: ['#888', '#999', '#777', '#aaa'][i % 4] }}
+          />
+        ))}
+
+        {/* Text */}
+        <motion.p
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: [0, 1, 0.8, 0], y: [30, 0, -10, -30] }}
+          transition={{ duration: 3.5, times: [0, 0.15, 0.4, 0.8] }}
+          onAnimationComplete={() => setTimeout(onComplete, 500)}
+          className="absolute bottom-0 text-white/40 text-sm italic"
+        >
+          记忆随风散去...
+        </motion.p>
+      </div>
+    </motion.div>
+  );
+};
+
 export default function App() {
   const [userId] = useState(() => {
     const stored = localStorage.getItem('heartbeat_userId');
@@ -401,6 +490,10 @@ export default function App() {
   const [partnerName, setPartnerName] = useState('');
   const [partnerBirthday, setPartnerBirthday] = useState('');
   const [interactionCount, setInteractionCount] = useState(0);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const [incomingDisconnectReq, setIncomingDisconnectReq] = useState(false);
+  const [showDisconnectAnim, setShowDisconnectAnim] = useState(false);
+  const [disconnectRejected, setDisconnectRejected] = useState(false);
 
   // Handle 5-minute auto-move to mailbox and 24-hour expiration
   useEffect(() => {
@@ -507,6 +600,19 @@ export default function App() {
       fetchProfile();
     });
 
+    newSocket.on('disconnect_requested', () => {
+      setIncomingDisconnectReq(true);
+    });
+
+    newSocket.on('disconnected', () => {
+      setShowDisconnectAnim(true);
+    });
+
+    newSocket.on('disconnect_rejected', () => {
+      setDisconnectRejected(true);
+      setTimeout(() => setDisconnectRejected(false), 3000);
+    });
+
     setSocket(newSocket);
     newSocket.emit('get_capsules');
     newSocket.emit('get_history');
@@ -593,6 +699,38 @@ export default function App() {
     setShowCustomInput(true);
   };
 
+  const handleRequestDisconnect = () => {
+    if (!socket || !isPartnerOnline) return;
+    socket.emit('request_disconnect');
+    setShowDisconnectConfirm(false);
+  };
+
+  const handleRespondDisconnect = (accept: boolean) => {
+    if (!socket) return;
+    socket.emit('respond_disconnect', { accept });
+    setIncomingDisconnectReq(false);
+    if (accept) {
+      setShowDisconnectAnim(true);
+    }
+  };
+
+  const handleDisconnectComplete = () => {
+    setShowDisconnectAnim(false);
+    setPartnerId(null);
+    setIncomingMessage(null);
+    setMailboxMessages([]);
+    setHistory([]);
+    setMyCapsules({});
+    setMyName('');
+    setMyBirthday('');
+    setPartnerName('');
+    setPartnerBirthday('');
+    setInteractionCount(0);
+    setIsPartnerOnline(false);
+    localStorage.removeItem('heartbeat_partnerId');
+    setView('pairing');
+  };
+
   if (view === 'pairing' && !partnerId) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 sm:p-8 space-y-8 sm:space-y-12 paper-bg overflow-y-auto">
@@ -664,12 +802,15 @@ export default function App() {
     <div className="min-h-screen flex flex-col relative paper-bg">
       <AnimatePresence>
         {sendingData && (
-          <SendingAnimation 
-            type={sendingData.type} 
-            text={sendingData.text} 
-            image={sendingData.image} 
-            onComplete={finalizeSend} 
+          <SendingAnimation
+            type={sendingData.type}
+            text={sendingData.text}
+            image={sendingData.image}
+            onComplete={finalizeSend}
           />
+        )}
+        {showDisconnectAnim && (
+          <DisconnectAnimation onComplete={handleDisconnectComplete} />
         )}
       </AnimatePresence>
 
@@ -1039,13 +1180,31 @@ export default function App() {
 
               <div className="space-y-4">
                 <div className="text-xs font-bold italic opacity-40 px-2 uppercase tracking-widest">设置与支持</div>
-                <button 
+                <button
                   onClick={() => setShowContactModal(true)}
                   className="w-full p-4 hand-drawn-border bg-white text-left text-sm italic flex justify-between items-center"
                 >
                   联系作者
                   <Send size={16} />
                 </button>
+                <button
+                  onClick={() => {
+                    if (!isPartnerOnline) return;
+                    setShowDisconnectConfirm(true);
+                  }}
+                  className={cn(
+                    "w-full p-4 hand-drawn-border text-left text-sm italic flex justify-between items-center transition-all",
+                    isPartnerOnline
+                      ? "bg-red-50 text-red-500 hover:bg-red-100"
+                      : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                  )}
+                >
+                  断开连接
+                  <Flame size={16} />
+                </button>
+                {!isPartnerOnline && (
+                  <p className="text-[10px] text-gray-400 italic text-center -mt-2">对方在线时才能发起断开连接</p>
+                )}
               </div>
             </div>
           </motion.div>
@@ -1086,6 +1245,111 @@ export default function App() {
                 我知道了
               </button>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Disconnect Confirmation Modal */}
+      <AnimatePresence>
+        {showDisconnectConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-xs bg-white hand-drawn-border p-8 space-y-6 relative"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-red-50 hand-drawn-border flex items-center justify-center mx-auto mb-4">
+                  <Flame size={24} className="text-red-400" />
+                </div>
+                <h3 className="text-lg font-bold italic">断开连接</h3>
+                <p className="text-sm italic opacity-60">
+                  将向对方发送断开请求，需要对方同意后才能断开。所有聊天记录将清除。
+                </p>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setShowDisconnectConfirm(false)}
+                  className="flex-1 py-3 hand-drawn-border bg-white text-sm"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleRequestDisconnect}
+                  className="flex-1 py-3 hand-drawn-border bg-red-400 text-white text-sm font-bold"
+                >
+                  发送请求
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Incoming Disconnect Request Modal */}
+      <AnimatePresence>
+        {incomingDisconnectReq && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-xs bg-white hand-drawn-border p-8 space-y-6 relative"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 bg-orange-50 hand-drawn-border flex items-center justify-center mx-auto mb-4">
+                  <Flame size={24} className="text-orange-400" />
+                </div>
+                <h3 className="text-lg font-bold italic">断开请求</h3>
+                <p className="text-sm italic opacity-60">
+                  {partnerName || '你的伴侣'} 请求断开连接，是否同意？
+                </p>
+                <p className="text-[10px] italic opacity-40">同意后所有聊天记录将清除</p>
+              </div>
+
+              <div className="flex gap-4">
+                <button
+                  onClick={() => handleRespondDisconnect(false)}
+                  className="flex-1 py-3 hand-drawn-border bg-white text-sm"
+                >
+                  拒绝
+                </button>
+                <button
+                  onClick={() => handleRespondDisconnect(true)}
+                  className="flex-1 py-3 hand-drawn-border bg-red-400 text-white text-sm font-bold"
+                >
+                  同意
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Disconnect Rejected Toast */}
+      <AnimatePresence>
+        {disconnectRejected && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[150] px-6 py-3 bg-white hand-drawn-border shadow-lg"
+          >
+            <p className="text-sm italic text-gray-600">
+              {partnerName || '对方'} 拒绝了断开请求
+            </p>
           </motion.div>
         )}
       </AnimatePresence>

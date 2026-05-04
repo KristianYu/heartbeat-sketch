@@ -22,6 +22,7 @@ async function startServer() {
   const userStatus = new Map<string, { online: boolean, lastSeen: number }>();
   const capsules = new Map<string, Map<string, string>>(); // userId -> Map<EmotionType, text>
   const profiles = new Map<string, { name: string; birthday: string }>(); // userId -> profile
+  const pendingDisconnectRequests = new Map<string, string>(); // requesterId -> targetId
 
   // Helper to get pair key
   const getPairKey = (id1: string, id2: string) => [id1, id2].sort().join(":");
@@ -182,11 +183,57 @@ async function startServer() {
       }
     });
 
+    socket.on("request_disconnect", () => {
+      const partnerId = pairs.get(userId);
+      if (!partnerId) {
+        socket.emit("disconnect_error", { error: "No partner found" });
+        return;
+      }
+      pendingDisconnectRequests.set(userId, partnerId);
+      io.to(partnerId).emit("disconnect_requested", { fromUserId: userId });
+    });
+
+    socket.on("respond_disconnect", ({ accept }: { accept: boolean }) => {
+      // Find who requested disconnect with this user as target
+      let requesterId: string | null = null;
+      for (const [reqId, targetId] of pendingDisconnectRequests) {
+        if (targetId === userId) {
+          requesterId = reqId;
+          break;
+        }
+      }
+      if (!requesterId) return;
+
+      pendingDisconnectRequests.delete(requesterId);
+
+      if (accept) {
+        // Clear pairing for both
+        const partnerId = pairs.get(userId);
+        if (partnerId) {
+          pairs.delete(userId);
+          pairs.delete(partnerId);
+        }
+
+        io.to(userId).emit("disconnected");
+        io.to(requesterId).emit("disconnected");
+      } else {
+        io.to(requesterId).emit("disconnect_rejected");
+      }
+    });
+
     socket.on("disconnect", () => {
       userStatus.set(userId, { online: false, lastSeen: Date.now() });
       const partnerId = pairs.get(userId);
       if (partnerId) {
         io.to(partnerId).emit("partner_status", { online: false });
+      }
+      // Clean up any pending disconnect requests from or to this user
+      pendingDisconnectRequests.delete(userId);
+      for (const [reqId, targetId] of pendingDisconnectRequests) {
+        if (targetId === userId) {
+          pendingDisconnectRequests.delete(reqId);
+          break;
+        }
       }
     });
   });
